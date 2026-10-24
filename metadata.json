@@ -1,0 +1,6 @@
+{
+  "name": "GasPoint - LPG Gas Sales, Ordering & Delivery Management System",
+  "description": "Comprehensive LPG gas sales, multi-provider marketplace, inventory tracking, M-Pesa payments, and delivery management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
