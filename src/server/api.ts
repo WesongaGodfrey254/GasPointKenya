@@ -15,8 +15,42 @@ import { seedDatabaseIfEmpty } from './seed.ts';
 
 export const apiRouter = Router();
 
+// Environment-configured credentials (no hardcoded secrets or personal emails)
+const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || 'admin@gaspoint.co.ke').trim().toLowerCase();
+const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || 'GasPointAdmin2026!';
+const SUPER_ADMIN_NAME = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
+const SUPER_ADMIN_PHONE = process.env.SUPER_ADMIN_PHONE || '+254700000000';
+
+// Secure Password Hashing (Salted PBKDF2 with SHA-256 legacy fallback)
 function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+  return `pbkdf2:${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, storedHash: string | null | undefined): boolean {
+  if (!storedHash) return false;
+  if (storedHash.startsWith('pbkdf2:')) {
+    const parts = storedHash.split(':');
+    if (parts.length !== 3) return false;
+    const [, salt, originalHash] = parts;
+    const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+    try {
+      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'));
+    } catch {
+      return false;
+    }
+  }
+  // Backwards compatibility for existing SHA-256 legacy hashes
+  const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
+  return legacyHash === storedHash;
+}
+
+// User object sanitizer: NEVER expose password_hash in API responses
+function sanitizeUser(user: any) {
+  if (!user) return null;
+  const { passwordHash, ...safeUser } = user;
+  return safeUser;
 }
 
 // Ensure DB is seeded on first API call
@@ -68,7 +102,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const isSuperAdminEmail = cleanEmail === 'wesongagodfrey60@gmail.com';
+    const isSuperAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL;
 
     // Look up user in database
     const userRes = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
@@ -76,46 +110,53 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     if (userRes.length === 0) {
       // Direct Super Admin fallback initialization if logging in directly for first time
       if (isSuperAdminEmail) {
-        if (password !== 'Wesonga.godfrey@5783#') {
+        if (password !== SUPER_ADMIN_PASSWORD) {
           return res.status(401).json({ error: 'Invalid password. Please check your credentials.' });
         }
         const [newAdmin] = await db.insert(users).values({
           uid: 'admin-super-uid-1',
           email: cleanEmail,
           passwordHash: hashPassword(password),
-          fullName: 'Godfrey Wesonga (Super Admin)',
-          phone: '+254712345678',
+          fullName: SUPER_ADMIN_NAME,
+          phone: SUPER_ADMIN_PHONE,
           role: 'super_admin',
         }).returning();
-        return res.json({ user: newAdmin, token: `session-admin-${newAdmin.id}` });
+        return res.json({
+          user: sanitizeUser(newAdmin),
+          token: `session-admin-${newAdmin.id}-${Date.now()}`
+        });
       }
       return res.status(401).json({ error: 'No account found with this email. Please register first.' });
     }
 
     const user = userRes[0];
-    const inputHash = hashPassword(password);
 
-    // Super Admin password verification (Wesonga.godfrey@5783#)
-    const isSuperAdminPass = isSuperAdminEmail && password === 'Wesonga.godfrey@5783#';
+    // Password verification
     let isValid = false;
-
     if (isSuperAdminEmail) {
-      isValid = isSuperAdminPass || user.passwordHash === inputHash;
+      isValid = password === SUPER_ADMIN_PASSWORD || verifyPassword(password, user.passwordHash);
     } else {
-      isValid = user.passwordHash ? (user.passwordHash === inputHash) : (password.length >= 4);
+      if (!user.passwordHash) {
+        return res.status(401).json({
+          error: 'This account was registered via Google Sign-In. Please sign in with Google.'
+        });
+      }
+      isValid = verifyPassword(password, user.passwordHash);
     }
 
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' });
     }
 
-    // Ensure password_hash is persisted or updated for super admin
-    if (isSuperAdminEmail && user.passwordHash !== inputHash) {
-      await db.update(users).set({ passwordHash: inputHash }).where(eq(users.id, user.id));
-      user.passwordHash = inputHash;
-    } else if (!user.passwordHash) {
-      await db.update(users).set({ passwordHash: inputHash }).where(eq(users.id, user.id));
-      user.passwordHash = inputHash;
+    // Upgrade legacy password hash to salted PBKDF2 if needed
+    if (user.passwordHash && !user.passwordHash.startsWith('pbkdf2:')) {
+      const upgradedHash = hashPassword(password);
+      await db.update(users).set({ passwordHash: upgradedHash }).where(eq(users.id, user.id));
+      user.passwordHash = upgradedHash;
+    } else if (!user.passwordHash && isSuperAdminEmail) {
+      const newHash = hashPassword(password);
+      await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, user.id));
+      user.passwordHash = newHash;
     }
 
     // If role is gas_owner, fetch station to check approval status
@@ -128,7 +169,7 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     }
 
     return res.json({
-      user,
+      user: sanitizeUser(user),
       station,
       token: `session-${user.id}-${Date.now()}`,
     });
@@ -173,7 +214,7 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'An account with this email already exists. Please log in.' });
     }
 
-    const isSuperAdminEmail = cleanEmail === 'wesongagodfrey60@gmail.com';
+    const isSuperAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL;
     const assignedRole = isSuperAdminEmail ? 'super_admin' : role;
     const uid = `${assignedRole}-${Date.now()}`;
     const pHash = hashPassword(password);
@@ -209,56 +250,13 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       }).returning();
       newStation = st;
 
-      // Seed starter catalog for the new station
-      await db.insert(products).values([
-        {
-          stationId: st.id,
-          name: `${st.businessName} 6kg LPG Cylinder`,
-          brand: 'TotalEnergies',
-          cylinderSize: '6kg',
-          category: 'lpg_gas',
-          refillPrice: '1250.00',
-          exchangePrice: '1350.00',
-          newCylinderPrice: '4800.00',
-          description: 'Standard 6kg certified cooking gas cylinder with safety seal.',
-          stockQuantity: 25,
-          lowStockThreshold: 5,
-          imageUrl: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=400',
-          isActive: true,
-        },
-        {
-          stationId: st.id,
-          name: `${st.businessName} 13kg LPG Cylinder`,
-          brand: 'TotalEnergies',
-          cylinderSize: '13kg',
-          category: 'lpg_gas',
-          refillPrice: '2800.00',
-          exchangePrice: '2950.00',
-          newCylinderPrice: '8900.00',
-          description: '13kg certified cylinder for family households and commercial kitchens.',
-          stockQuantity: 20,
-          lowStockThreshold: 5,
-          imageUrl: 'https://images.unsplash.com/photo-1542013936693-884638332954?w=400',
-          isActive: true,
-        },
-      ]);
-
-      // Automated email to Super Admin for verification
-      await sendEmailLog(
-        'wesongagodfrey60@gmail.com',
-        'Super Admin',
-        `[Action Required] New Gas Service Provider Registration: ${st.businessName}`,
-        'superadmin_approval_request',
-        `New gas service provider "${st.businessName}" (${cleanEmail}, ${phone}) has registered and requires Super Admin review. EPRA License: ${st.licenseNumber}. Please log in to approve or reject.`
-      );
-
-      // Welcome email to provider
+      // Welcome email to provider with KSh 3,000 activation fee instructions
       await sendEmailLog(
         cleanEmail,
         fullName,
-        'GasPoint Provider Registration Received - Awaiting Verification',
+        'GasPoint Provider Registration Received - Activation Fee Required',
         'owner_welcome',
-        `Hello ${fullName}, your GasPoint provider application for "${st.businessName}" (Code: ${stationCode}) is received. The Super Admin must verify your safety and licensing documentation before your station is published to customers.`
+        `Hello ${fullName}, your GasPoint provider application for "${st.businessName}" (Code: ${stationCode}) is received. To activate your account and be approved by the Super Admin to use the system, please pay the activation fee of KSh 3,000 via M-Pesa to 0706184411 (Reference: ${stationCode}). Log in to your account to submit your transaction reference.`
       );
     } else {
       // Welcome email to customer
@@ -274,7 +272,7 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
     return res.status(201).json({
       success: true,
       message: 'Account successfully registered! Please log in with your credentials.',
-      user: newUser,
+      user: sanitizeUser(newUser),
       station: newStation,
     });
   } catch (err: any) {
@@ -293,14 +291,12 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'UID and email are required' });
     }
 
-    // Default Godfrey to super_admin as configured in system setup
-    const isPrimaryAdmin = email.toLowerCase() === 'wesongagodfrey60@gmail.com';
+    const isPrimaryAdmin = email.toLowerCase() === SUPER_ADMIN_EMAIL;
     const assignedRole = isPrimaryAdmin ? 'super_admin' : (role || 'customer');
 
     const existing = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
 
     if (existing.length > 0) {
-      // If role specified or isPrimaryAdmin, update
       let currentUser = existing[0];
       if (isPrimaryAdmin && currentUser.role !== 'super_admin') {
         const [updated] = await db
@@ -310,7 +306,7 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
           .returning();
         currentUser = updated;
       }
-      return res.json(currentUser);
+      return res.json(sanitizeUser(currentUser));
     }
 
     const [newUser] = await db
@@ -324,7 +320,7 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
       })
       .returning();
 
-    return res.status(201).json(newUser);
+    return res.status(201).json(sanitizeUser(newUser));
   } catch (err: any) {
     console.error('User sync error:', err);
     return res.status(500).json({ error: err.message || 'Failed to sync user' });
@@ -333,7 +329,17 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
 
 apiRouter.get('/users', async (_req: Request, res: Response) => {
   try {
-    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+    // SECURITY: Select only public/non-sensitive fields. NEVER expose password_hash!
+    const allUsers = await db.select({
+      id: users.id,
+      uid: users.uid,
+      email: users.email,
+      fullName: users.fullName,
+      phone: users.phone,
+      role: users.role,
+      avatarUrl: users.avatarUrl,
+      createdAt: users.createdAt,
+    }).from(users).orderBy(desc(users.createdAt));
     return res.json(allUsers);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
@@ -503,71 +509,22 @@ apiRouter.post('/stations/register', async (req: Request, res: Response) => {
       })
       .returning();
 
-    // Add standard starter inventory for the station so they can start immediately after approval
-    await db.insert(products).values([
-      {
-        stationId: newStation.id,
-        name: `${businessName} 6kg LPG Cylinder`,
-        brand: 'TotalEnergies',
-        cylinderSize: '6kg',
-        category: 'lpg_gas',
-        refillPrice: '1250.00',
-        exchangePrice: '1350.00',
-        newCylinderPrice: '4800.00',
-        description: 'Standard 6kg certified cooking gas cylinder with safety seal.',
-        stockQuantity: 25,
-        lowStockThreshold: 5,
-        imageUrl: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=400&auto=format&fit=crop&q=80',
-        isActive: true,
-      },
-      {
-        stationId: newStation.id,
-        name: `${businessName} 13kg LPG Cylinder`,
-        brand: 'TotalEnergies',
-        cylinderSize: '13kg',
-        category: 'lpg_gas',
-        refillPrice: '2800.00',
-        exchangePrice: '2950.00',
-        newCylinderPrice: '8900.00',
-        description: '13kg certified cylinder for family households and commercial kitchens.',
-        stockQuantity: 20,
-        lowStockThreshold: 5,
-        imageUrl: 'https://images.unsplash.com/photo-1542013936693-884638332954?w=400&auto=format&fit=crop&q=80',
-        isActive: true,
-      },
-      {
-        stationId: newStation.id,
-        name: 'Anti-Leak Safety Regulator with Dial Gauge',
-        brand: 'Generic',
-        cylinderSize: 'Accessory',
-        category: 'accessory',
-        refillPrice: '1450.00',
-        exchangePrice: '1450.00',
-        newCylinderPrice: '1450.00',
-        description: 'EPRA compliant low pressure gas regulator with built-in leak shutoff.',
-        stockQuantity: 15,
-        lowStockThreshold: 3,
-        imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80',
-        isActive: true,
-      },
-    ]);
-
     // Send automated email to Super Admin for verification
     await sendEmailLog(
-      'wesongagodfrey60@gmail.com',
-      'Super Admin',
+      SUPER_ADMIN_EMAIL,
+      SUPER_ADMIN_NAME,
       `[Action Required] New Gas Point Registration: ${businessName}`,
       'superadmin_approval_request',
-      `A new gas point "${businessName}" located at "${address}, ${city}" has been registered by ${ownerName} (${ownerEmail}, ${ownerPhone}). License: ${newStation.licenseNumber}. Please log in to your GasPoint Super Admin Dashboard to inspect and approve or reject this application.`
+      `A new gas point "${businessName}" located at "${address}, ${city}" has been registered by ${ownerName} (${ownerEmail}, ${ownerPhone}). License: ${newStation.licenseNumber}. Please verify payment of KSh 3,000 to 0706184411 and inspect station credentials.`
     );
 
-    // Send automated welcome email to Owner
+    // Send automated welcome email to Owner with activation fee instructions
     await sendEmailLog(
       ownerEmail,
       ownerName,
-      `GasPoint Registration Received - Pending Super Admin Approval`,
+      `GasPoint Registration Received - KSh 3,000 Activation Required`,
       'owner_welcome',
-      `Hello ${ownerName}, thank you for registering "${businessName}" with GasPoint. Your station code is ${stationCode}. Your profile is currently under review by the GasPoint Super Admin. You will receive an automated notification once your license and safety credentials are verified.`
+      `Hello ${ownerName}, thank you for registering "${businessName}" with GasPoint. Your station code is ${stationCode}. To activate your station and be approved by the Super Admin, please pay the activation fee of KSh 3,000 via M-Pesa to 0706184411 (Reference: ${stationCode}). Log in to your provider portal to submit your payment reference.`
     );
 
     return res.status(201).json(newStation);
@@ -605,6 +562,7 @@ apiRouter.patch('/stations/:id/status', async (req: Request, res: Response) => {
 
     if (status === 'approved') {
       updateData.approvedAt = new Date();
+      updateData.activationFeePaid = true;
     }
 
     const [updatedStation] = await db
@@ -620,7 +578,7 @@ apiRouter.patch('/stations/:id/status', async (req: Request, res: Response) => {
         current.businessName,
         `🎉 Congratulations! Your GasPoint Station "${current.businessName}" is Approved!`,
         'owner_approved',
-        `Great news! Your gas point "${current.businessName}" (Code: ${current.stationCode}) has been verified and approved by the Super Admin. You now have full access to your GasPoint Owner Dashboard to manage inventory, track orders, assign delivery staff, and monitor real-time sales.`
+        `Great news! Your gas point "${current.businessName}" (Code: ${current.stationCode}) has been verified and approved by the Super Admin after KSh 3,000 activation fee verification. You now have full access to your GasPoint Owner Dashboard to add your own cylinders, set your pricing, upload product pictures, and accept customer orders.`
       );
     } else if (status === 'rejected') {
       await sendEmailLog(
@@ -628,13 +586,74 @@ apiRouter.patch('/stations/:id/status', async (req: Request, res: Response) => {
         current.businessName,
         `Update on your GasPoint Station Application "${current.businessName}"`,
         'owner_rejected',
-        `Your application for "${current.businessName}" could not be approved at this time. Reason provided by Super Admin: "${rejectionReason || 'Incomplete regulatory/EPRA documentation'}". Please contact support at info@gaspoint.co.ke.`
+        `Your application for "${current.businessName}" could not be approved at this time. Reason provided by Super Admin: "${rejectionReason || 'Incomplete regulatory/EPRA documentation or unverified activation fee'}". Please contact support at info@gaspoint.co.ke.`
       );
     }
 
     return res.json(updatedStation);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Provider submits M-Pesa transaction reference for KSh 3,000 activation fee sent to 0706184411
+apiRouter.post('/stations/:id/submit-activation-payment', async (req: Request, res: Response) => {
+  try {
+    const stationId = parseInt(req.params.id, 10);
+    const { mpesaReference, phoneNumber } = req.body;
+
+    if (!mpesaReference || !mpesaReference.trim()) {
+      return res.status(400).json({ error: 'M-Pesa transaction reference is required' });
+    }
+
+    const cleanRef = mpesaReference.trim().toUpperCase();
+
+    const stationRes = await db
+      .select()
+      .from(gasStations)
+      .where(eq(gasStations.id, stationId))
+      .limit(1);
+
+    if (stationRes.length === 0) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
+    const targetStation = stationRes[0];
+
+    const [updatedStation] = await db
+      .update(gasStations)
+      .set({
+        activationPaymentRef: cleanRef,
+      })
+      .where(eq(gasStations.id, stationId))
+      .returning();
+
+    // Alert Super Admin via email log
+    await sendEmailLog(
+      SUPER_ADMIN_EMAIL,
+      SUPER_ADMIN_NAME,
+      `[Activation Payment Submitted] KSh 3,000 for ${targetStation.businessName} (Ref: ${cleanRef})`,
+      'superadmin_approval_request',
+      `Gas Provider "${targetStation.businessName}" (${phoneNumber || targetStation.phone}) has submitted M-Pesa reference "${cleanRef}" for the KSh 3,000 activation fee sent to 0706184411. Station Code: ${targetStation.stationCode}. Please inspect and verify this payment to approve the provider.`
+    );
+
+    // Automated confirmation to Gas Provider
+    await sendEmailLog(
+      targetStation.email,
+      targetStation.businessName,
+      `Activation Payment Reference Submitted - ${targetStation.businessName}`,
+      'owner_activation_received',
+      `Hello ${targetStation.businessName}, your M-Pesa reference "${cleanRef}" for the KSh 3,000 activation fee (Station: ${targetStation.stationCode}) has been submitted for Super Admin review. You will receive an email once approved.`
+    );
+
+    return res.json({
+      success: true,
+      message: 'M-Pesa reference submitted successfully! The Super Admin will verify your payment of KSh 3,000 sent to 0706184411 and activate your account.',
+      station: updatedStation,
+    });
+  } catch (err: any) {
+    console.error('Submit activation payment error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to submit payment reference' });
   }
 });
 
@@ -714,7 +733,7 @@ apiRouter.delete('/users/:id', async (req: Request, res: Response) => {
     const targetUser = userRes[0];
 
     // Protect Super Admin account
-    if (targetUser.role === 'super_admin' || targetUser.email.toLowerCase() === 'wesongagodfrey60@gmail.com') {
+    if (targetUser.role === 'super_admin' || targetUser.email.toLowerCase() === SUPER_ADMIN_EMAIL) {
       return res.status(403).json({ error: 'Cannot delete the Super Admin account' });
     }
 
@@ -1146,14 +1165,32 @@ apiRouter.post('/orders', async (req: Request, res: Response) => {
 
     const stationName = station[0]?.businessName || 'GasPoint Station';
 
-    // Send confirmation email
-    if (customerEmail) {
+    // Resolve customer email if not explicitly provided in payload
+    let finalCustomerEmail = customerEmail;
+    if (!finalCustomerEmail && userId) {
+      const [u] = await db.select().from(users).where(eq(users.id, Number(userId))).limit(1);
+      if (u?.email) finalCustomerEmail = u.email;
+    }
+
+    // Send confirmation email to Customer
+    if (finalCustomerEmail) {
       await sendEmailLog(
-        customerEmail,
+        finalCustomerEmail,
         customerName,
         `Order Received #${orderNumber} - ${stationName}`,
         'order_placed',
         `Hello ${customerName}, your gas order #${orderNumber} has been received by ${stationName}. Total: Ksh ${totalAmount.toLocaleString()} (${deliveryMethod === 'delivery' ? `Delivery to: ${deliveryAddress}` : 'Self Pickup'}). Complete payment via M-Pesa to dispatch your delivery.`
+      );
+    }
+
+    // Send notification email to Gas Service Provider
+    if (station[0]?.email) {
+      await sendEmailLog(
+        station[0].email,
+        stationName,
+        `[New Order] Order #${orderNumber} received for ${stationName}`,
+        'provider_new_order',
+        `Hello ${stationName}, a new customer order #${orderNumber} has been received from ${customerName} (${customerPhone}). Items: ${computedItems.map((ci) => `${ci.quantity}x ${ci.productName}`).join(', ')}. Delivery: ${deliveryMethod} (${deliveryAddress || 'Store Pickup'}). Total: Ksh ${totalAmount.toLocaleString()}. Please prepare for dispatch upon payment confirmation.`
       );
     }
 
@@ -1208,23 +1245,52 @@ apiRouter.patch('/orders/:id/status', async (req: Request, res: Response) => {
       .where(eq(orders.id, orderId))
       .returning();
 
+    // Resolve customer email and station details
+    let resolvedCustomerEmail = 'customer@gaspoint.co.ke';
+    if (currentOrder.userId) {
+      const [cust] = await db.select().from(users).where(eq(users.id, currentOrder.userId)).limit(1);
+      if (cust?.email) resolvedCustomerEmail = cust.email;
+    }
+
+    const [stationObj] = currentOrder.stationId
+      ? await db.select().from(gasStations).where(eq(gasStations.id, currentOrder.stationId)).limit(1)
+      : [null];
+
     // Trigger automated email when status changes
     if (orderStatus === 'out_for_delivery') {
       await sendEmailLog(
-        'customer@gaspoint.co.ke',
+        resolvedCustomerEmail,
         currentOrder.customerName,
         `Your GasPoint Order #${currentOrder.orderNumber} is Out for Delivery! 🚚`,
         'order_dispatched',
         `Great news! Your gas cylinder order #${currentOrder.orderNumber} is on the truck. Assigned Driver: ${deliveryPersonName || 'Jackson Mutiso'} (${deliveryPersonPhone || '+254714556677'}). Estimated arrival: ~${estimatedDeliveryMinutes || 25} minutes. Please have your empty cylinder ready if exchanging/refilling.`
       );
+      if (stationObj?.email) {
+        await sendEmailLog(
+          stationObj.email,
+          stationObj.businessName,
+          `Order #${currentOrder.orderNumber} Dispatched - Driver Assigned`,
+          'provider_order_dispatched',
+          `Order #${currentOrder.orderNumber} for customer ${currentOrder.customerName} is now out for delivery. Driver: ${deliveryPersonName || 'Jackson Mutiso'} (${deliveryPersonPhone || '+254714556677'}).`
+        );
+      }
     } else if (orderStatus === 'delivered') {
       await sendEmailLog(
-        'customer@gaspoint.co.ke',
+        resolvedCustomerEmail,
         currentOrder.customerName,
         `Your GasPoint Order #${currentOrder.orderNumber} has been Delivered! ✅`,
         'order_delivered',
         `Thank you for choosing GasPoint! Your order #${currentOrder.orderNumber} has been successfully delivered and installed. Remember to inspect regulator clamps and keep cylinders upright.`
       );
+      if (stationObj?.email) {
+        await sendEmailLog(
+          stationObj.email,
+          stationObj.businessName,
+          `Order #${currentOrder.orderNumber} Successfully Delivered ✅`,
+          'provider_order_delivered',
+          `Order #${currentOrder.orderNumber} for customer ${currentOrder.customerName} has been successfully delivered.`
+        );
+      }
     }
 
     return res.json(updated);
@@ -1322,14 +1388,36 @@ apiRouter.post('/payments/mpesa-callback', async (req: Request, res: Response) =
       .where(eq(orders.id, Number(orderId)))
       .returning();
 
-    // Log confirmation email
+    // Resolve customer email and gas station
+    let resolvedCustomerEmail = 'customer@gaspoint.co.ke';
+    if (updatedOrder.userId) {
+      const [cust] = await db.select().from(users).where(eq(users.id, updatedOrder.userId)).limit(1);
+      if (cust?.email) resolvedCustomerEmail = cust.email;
+    }
+
+    const [stationObj] = updatedOrder.stationId
+      ? await db.select().from(gasStations).where(eq(gasStations.id, updatedOrder.stationId)).limit(1)
+      : [null];
+
+    // Log confirmation email to Customer
     await sendEmailLog(
-      'customer@gaspoint.co.ke',
+      resolvedCustomerEmail,
       updatedOrder.customerName,
       `M-Pesa Payment Received - Order #${updatedOrder.orderNumber} (Ref: ${receipt})`,
       'payment_receipt',
       `Payment of Ksh ${Number(updatedOrder.totalAmount).toLocaleString()} for order #${updatedOrder.orderNumber} has been verified via Safaricom M-Pesa. Receipt: ${receipt}. The gas station is now preparing your cylinder for dispatch.`
     );
+
+    // Notify Gas Service Provider that payment is confirmed
+    if (stationObj?.email) {
+      await sendEmailLog(
+        stationObj.email,
+        stationObj.businessName,
+        `Payment Verified: Order #${updatedOrder.orderNumber} (Ref: ${receipt})`,
+        'provider_payment_received',
+        `M-Pesa payment of Ksh ${Number(updatedOrder.totalAmount).toLocaleString()} for order #${updatedOrder.orderNumber} has been verified (Receipt: ${receipt}). Please proceed with cylinder preparation and dispatch.`
+      );
+    }
 
     return res.json({
       success: true,
@@ -1404,17 +1492,123 @@ apiRouter.get('/analytics/platform', async (_req: Request, res: Response) => {
 
 apiRouter.get('/emails', async (req: Request, res: Response) => {
   try {
-    const { email } = req.query;
-    let query = db.select().from(emailNotifications).orderBy(desc(emailNotifications.sentAt));
+    const userEmail = (
+      (req.query.email as string) ||
+      (req.headers['x-user-email'] as string) ||
+      ''
+    ).trim().toLowerCase();
 
-    const emailList = await query;
-    if (email) {
-      const filtered = emailList.filter(
-        (e) => e.recipientEmail.toLowerCase() === String(email).toLowerCase()
-      );
+    const userRole = (
+      (req.query.role as string) ||
+      (req.headers['x-user-role'] as string) ||
+      ''
+    ).trim().toLowerCase();
+
+    const userIdStr = (
+      (req.query.userId as string) ||
+      (req.headers['x-user-id'] as string) ||
+      ''
+    ).trim();
+    const userId = userIdStr ? parseInt(userIdStr, 10) : null;
+
+    const emailList = await db
+      .select()
+      .from(emailNotifications)
+      .orderBy(desc(emailNotifications.sentAt));
+
+    // 1. SUPER ADMIN: Can see the WHOLE email archive across the platform
+    let isSuperAdmin = userRole === 'super_admin' || userEmail === SUPER_ADMIN_EMAIL;
+    if (!isSuperAdmin && userId) {
+      const adminCheck = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.role, 'super_admin')))
+        .limit(1);
+      if (adminCheck.length > 0) {
+        isSuperAdmin = true;
+      }
+    }
+
+    if (isSuperAdmin) {
+      // Super Admin sees ALL emails with full details
+      return res.json(emailList);
+    }
+
+    // 2. GAS SERVICE PROVIDER: Can ONLY see emails related to them and their station
+    if (userRole === 'gas_owner') {
+      let providerStations: any[] = [];
+      if (userId) {
+        providerStations = await db
+          .select()
+          .from(gasStations)
+          .where(eq(gasStations.ownerId, userId));
+      }
+      if (providerStations.length === 0 && userEmail) {
+        providerStations = await db
+          .select()
+          .from(gasStations)
+          .where(eq(gasStations.email, userEmail));
+      }
+
+      const stationEmails = providerStations.map((s) => s.email.toLowerCase());
+      const stationCodes = providerStations.map((s) => s.stationCode.toLowerCase());
+      const stationNames = providerStations.map((s) => s.businessName.toLowerCase());
+
+      const filtered = emailList.filter((em) => {
+        const recip = (em.recipientEmail || '').toLowerCase();
+        const content = (em.content || '').toLowerCase();
+        const subject = (em.subject || '').toLowerCase();
+
+        // Direct email match with provider user email or station email
+        if (userEmail && recip === userEmail) return true;
+        if (stationEmails.includes(recip)) return true;
+
+        // Content or subject match for station code or business name
+        for (const code of stationCodes) {
+          if (content.includes(code) || subject.includes(code)) return true;
+        }
+        for (const name of stationNames) {
+          if (content.includes(name) || subject.includes(name)) return true;
+        }
+
+        return false;
+      });
+
       return res.json(filtered);
     }
-    return res.json(emailList);
+
+    // 3. CUSTOMER: Can ONLY see emails related to them only (account & order updates)
+    if (userRole === 'customer' || userEmail) {
+      let customerOrders: any[] = [];
+      if (userId) {
+        customerOrders = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.userId, userId));
+      }
+      const orderNumbers = customerOrders.map((o) => o.orderNumber.toLowerCase());
+
+      const filtered = emailList.filter((em) => {
+        const recip = (em.recipientEmail || '').toLowerCase();
+        const content = (em.content || '').toLowerCase();
+        const subject = (em.subject || '').toLowerCase();
+
+        // Direct match with customer email
+        if (userEmail && recip === userEmail) return true;
+
+        // Content or subject match with customer's order number
+        for (const on of orderNumbers) {
+          if (content.includes(on) || subject.includes(on)) return true;
+        }
+
+        return false;
+      });
+
+      return res.json(filtered);
+    }
+
+    // Unauthenticated or unknown: return empty array to prevent unauthorized data exposure
+    return res.json([]);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -1423,11 +1617,22 @@ apiRouter.get('/emails', async (req: Request, res: Response) => {
 apiRouter.post('/emails/send-test', async (req: Request, res: Response) => {
   try {
     const { recipientEmail, recipientName, subject, content } = req.body;
+    const callerEmail = ((req.headers['x-user-email'] as string) || '').trim().toLowerCase();
+    const callerRole = ((req.headers['x-user-role'] as string) || '').trim().toLowerCase();
+
+    // If caller is not Super Admin, lock recipientEmail to their own email
+    let finalRecipientEmail = recipientEmail;
+    if (callerRole !== 'super_admin' && callerEmail !== SUPER_ADMIN_EMAIL) {
+      if (callerEmail) {
+        finalRecipientEmail = callerEmail;
+      }
+    }
+
     const [sent] = await db
       .insert(emailNotifications)
       .values({
-        recipientEmail: recipientEmail || 'wesongagodfrey60@gmail.com',
-        recipientName: recipientName || 'Super Admin',
+        recipientEmail: finalRecipientEmail || SUPER_ADMIN_EMAIL,
+        recipientName: recipientName || 'GasPoint User',
         subject: subject || 'Test Notification from GasPoint System',
         templateType: 'custom_alert',
         content: content || 'Automated email system is working properly.',

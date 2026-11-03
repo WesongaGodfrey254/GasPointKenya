@@ -1,3 +1,5 @@
+// GasPoint Vite configuration with Express API plugin
+import 'dotenv/config';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';

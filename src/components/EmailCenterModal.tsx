@@ -22,12 +22,25 @@ export const EmailCenterModal: React.FC<EmailCenterModalProps> = ({ isOpen, onCl
   const fetchEmails = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/emails');
+      const params = new URLSearchParams();
+      if (currentUser?.email) params.set('email', currentUser.email);
+      if (currentUser?.role) params.set('role', currentUser.role);
+      if (currentUser?.id) params.set('userId', String(currentUser.id));
+
+      const res = await fetch(`/api/emails?${params.toString()}`, {
+        headers: {
+          'x-user-email': currentUser?.email || '',
+          'x-user-role': currentUser?.role || '',
+          'x-user-id': String(currentUser?.id || ''),
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setEmails(data);
-        if (data.length > 0 && !selectedEmail) {
+        if (data.length > 0) {
           setSelectedEmail(data[0]);
+        } else {
+          setSelectedEmail(null);
         }
       }
     } catch (e) {
@@ -39,23 +52,32 @@ export const EmailCenterModal: React.FC<EmailCenterModalProps> = ({ isOpen, onCl
 
   useEffect(() => {
     if (isOpen) {
+      if (currentUser?.email) {
+        setTestRecipient(currentUser.email);
+      }
       fetchEmails();
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
 
   const handleSendTestNotification = async () => {
     setIsSendingTest(true);
     try {
+      const finalRecipient = currentUser?.role === 'super_admin' ? (testRecipient || currentUser.email) : currentUser?.email;
       const res = await fetch('/api/emails/send-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-email': currentUser?.email || '',
+          'x-user-role': currentUser?.role || '',
+          'x-user-id': String(currentUser?.id || ''),
+        },
         body: JSON.stringify({
-          recipientEmail: testRecipient,
+          recipientEmail: finalRecipient,
           recipientName: currentUser?.fullName || 'GasPoint User',
           subject: `Automated Test Alert: GasPoint Delivery Notification`,
-          content: `This is an automated system verification email for ${testRecipient}. Your account and notification preferences are active. All order dispatches and approval updates are logged.`,
+          content: `This is an automated system verification email for ${finalRecipient}. Your account and notification preferences are active. All order dispatches and approval updates are logged.`,
         }),
       });
       if (res.ok) {
@@ -83,9 +105,34 @@ export const EmailCenterModal: React.FC<EmailCenterModalProps> = ({ isOpen, onCl
               <Mail className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base">GasPoint Automated Email Notification Center</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base">
+                  {currentUser?.role === 'super_admin'
+                    ? 'GasPoint Automated Email Notification Center (Super Admin View)'
+                    : currentUser?.role === 'gas_owner'
+                    ? 'Gas Provider Notification Inbox'
+                    : 'Customer Notification Inbox'}
+                </h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  currentUser?.role === 'super_admin'
+                    ? 'bg-amber-400 text-slate-950'
+                    : currentUser?.role === 'gas_owner'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-700 text-slate-200'
+                }`}>
+                  {currentUser?.role === 'super_admin'
+                    ? 'All System Emails'
+                    : currentUser?.role === 'gas_owner'
+                    ? 'Station Specific'
+                    : 'Personal'}
+                </span>
+              </div>
               <p className="text-xs text-slate-400">
-                Audit log of all transactional emails sent for approvals, M-Pesa receipts, and order statuses
+                {currentUser?.role === 'super_admin'
+                  ? 'Complete platform audit log of all transactional emails sent across GasPoint'
+                  : currentUser?.role === 'gas_owner'
+                  ? 'Transactional emails, activation notices, orders, and receipts related to your station'
+                  : 'Order receipts, live delivery status updates, and account notifications'}
               </p>
             </div>
           </div>
@@ -110,7 +157,7 @@ export const EmailCenterModal: React.FC<EmailCenterModalProps> = ({ isOpen, onCl
           {/* Email List Sidebar */}
           <div className="w-full md:w-80 border-r border-slate-200 overflow-y-auto bg-slate-50/50 p-3 space-y-2">
             <div className="p-2 flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider">
-              <span>Inbox ({emails.length})</span>
+              <span>{currentUser?.role === 'super_admin' ? `All Emails (${emails.length})` : `My Emails (${emails.length})`}</span>
               <button
                 onClick={handleSendTestNotification}
                 disabled={isSendingTest}

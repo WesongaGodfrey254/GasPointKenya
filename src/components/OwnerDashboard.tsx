@@ -21,6 +21,11 @@ import {
   Check,
   X,
   FileCheck,
+  Upload,
+  Trash2,
+  Image as ImageIcon,
+  CreditCard,
+  Send,
 } from 'lucide-react';
 
 export const OwnerDashboard: React.FC = () => {
@@ -38,20 +43,27 @@ export const OwnerDashboard: React.FC = () => {
   const [driverPhone, setDriverPhone] = useState('+254714556677');
   const [deliveryMinutes, setDeliveryMinutes] = useState('25');
 
-  // Inventory
+  // Activation Fee Payment State (KSh 3,000 on 0706184411)
+  const [paymentRefInput, setPaymentRefInput] = useState('');
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentSubmitMsg, setPaymentSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Inventory (Station Stock & Pricing starts empty as configured)
   const [products, setProducts] = useState<Product[]>([]);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [submittingProduct, setSubmittingProduct] = useState(false);
   const [newProduct, setNewProduct] = useState({
     name: '',
     brand: 'TotalEnergies',
     cylinderSize: '13kg',
     category: 'lpg_gas',
-    refillPrice: '2800',
-    exchangePrice: '2950',
-    newCylinderPrice: '8900',
-    stockQuantity: '20',
+    refillPrice: '',
+    exchangePrice: '',
+    newCylinderPrice: '',
+    stockQuantity: '',
     lowStockThreshold: '5',
     description: '',
+    imageUrl: '',
   });
 
   // Analytics
@@ -145,10 +157,27 @@ export const OwnerDashboard: React.FC = () => {
     }
   };
 
+  // Handle Image Upload from device (convert to base64 data url)
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2.5 * 1024 * 1024) {
+        alert('File size exceeds 2.5MB. Please upload a smaller image.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewProduct((prev) => ({ ...prev, imageUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Add Product to Station
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!station) return;
+    setSubmittingProduct(true);
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
@@ -161,10 +190,68 @@ export const OwnerDashboard: React.FC = () => {
 
       if (res.ok) {
         setIsAddProductOpen(false);
+        setNewProduct({
+          name: '',
+          brand: 'TotalEnergies',
+          cylinderSize: '13kg',
+          category: 'lpg_gas',
+          refillPrice: '',
+          exchangePrice: '',
+          newCylinderPrice: '',
+          stockQuantity: '',
+          lowStockThreshold: '5',
+          description: '',
+          imageUrl: '',
+        });
         fetchStationData();
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setSubmittingProduct(false);
+    }
+  };
+
+  // Delete Product from Station
+  const handleDeleteProduct = async (productId: number) => {
+    if (!confirm('Are you sure you want to remove this product from your station inventory?')) return;
+    try {
+      const res = await fetch(`/api/products/${productId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProducts((prev) => prev.filter((p) => p.id !== productId));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Submit Activation Payment Reference (KSh 3,000 on 0706184411)
+  const handleSubmitPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!station || !paymentRefInput.trim()) return;
+    setPaymentSubmitting(true);
+    setPaymentSubmitMsg(null);
+    try {
+      const res = await fetch(`/api/stations/${station.id}/submit-activation-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mpesaReference: paymentRefInput.trim(),
+          phoneNumber: station.phone,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPaymentSubmitMsg({ type: 'success', text: data.message });
+        setStation((prev) => prev ? { ...prev, activationPaymentRef: paymentRefInput.trim().toUpperCase() } : null);
+        setPaymentRefInput('');
+      } else {
+        setPaymentSubmitMsg({ type: 'error', text: data.error || 'Failed to submit payment reference' });
+      }
+    } catch (err: any) {
+      setPaymentSubmitMsg({ type: 'error', text: err.message || 'Network error submitting payment' });
+    } finally {
+      setPaymentSubmitting(false);
     }
   };
 
@@ -188,50 +275,133 @@ export const OwnerDashboard: React.FC = () => {
     );
   }
 
-  // PENDING VERIFICATION SCREEN (Super Admin must approve first)
+  // PENDING VERIFICATION & ACTIVATION SCREEN (Super Admin must approve first after KSh 3,000 fee on 0706184411)
   if (station.status === 'pending_approval') {
     return (
       <div className="max-w-2xl mx-auto space-y-6 py-6">
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-6 sm:p-8 text-center space-y-4 shadow-sm">
+        <div className="bg-white border-2 border-amber-300 rounded-3xl p-6 sm:p-8 text-center space-y-5 shadow-lg">
           <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
             <Clock className="w-8 h-8 animate-pulse" />
           </div>
 
           <div className="space-y-1">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-200/60 px-3 py-1 rounded-full">
-              Status: Awaiting Super Admin Verification
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
+              Status: Awaiting Admin Approval & Activation
             </span>
-            <h2 className="text-2xl font-extrabold text-slate-900 pt-2">
+            <h2 className="text-2xl font-black text-slate-900 pt-2">
               {station.businessName}
             </h2>
             <p className="text-xs text-slate-600 max-w-md mx-auto">
-              Station Code: <strong className="font-mono">{station.stationCode}</strong> • License: <strong className="font-mono">{station.licenseNumber}</strong>
+              Station Code: <strong className="font-mono text-emerald-700">{station.stationCode}</strong> • License: <strong className="font-mono">{station.licenseNumber}</strong>
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-5 text-left border border-amber-200/70 space-y-3 text-xs text-slate-700">
-            <div className="font-bold text-slate-900 flex items-center gap-1.5">
-              <FileCheck className="w-4 h-4 text-emerald-600" />
-              <span>Compliance & Safety Review Underway</span>
+          {/* Activation Fee Payment Requirement Box */}
+          <div className="bg-gradient-to-br from-emerald-50 via-teal-50 to-emerald-100/60 rounded-2xl p-6 text-left border-2 border-emerald-300 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between border-b border-emerald-200 pb-3">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-emerald-700" />
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Required Activation Fee for Account Approval
+                </h3>
+              </div>
+              <span className="text-sm font-black text-emerald-800 bg-white px-3 py-1 rounded-full border border-emerald-200 shadow-xs">
+                KSh 3,000
+              </span>
             </div>
-            <p className="text-slate-600 leading-relaxed">
-              In accordance with Kenyan Energy and Petroleum Regulatory Authority (EPRA) LPG distribution guidelines, the Super Admin must inspect and approve your physical premises, storage permit, and safety setup before your station goes live on the marketplace.
+
+            <p className="text-xs text-slate-700 leading-relaxed">
+              To have your station verified and approved by the Super Admin to access the system, please pay the one-time platform onboarding and EPRA compliance review fee of <strong>KSh 3,000</strong>.
             </p>
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-              <div>📍 Address: <strong className="text-slate-700">{station.address}, {station.city}</strong></div>
-              <div>📞 Phone: <strong className="text-slate-700">{station.phone}</strong></div>
+
+            {/* M-Pesa Payment Details */}
+            <div className="bg-white rounded-xl p-4 border border-emerald-200 space-y-2">
+              <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                <span>M-Pesa Payment Instructions:</span>
+              </div>
+              <ol className="text-xs text-slate-700 space-y-1.5 list-decimal list-inside">
+                <li>Go to <strong>M-Pesa</strong> menu on your phone</li>
+                <li>Select <strong>Send Money</strong></li>
+                <li>Enter Phone Number: <strong className="font-mono text-emerald-800 text-sm bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">0706184411</strong></li>
+                <li>Enter Amount: <strong className="text-slate-900 font-bold">KSh 3,000</strong></li>
+                <li>Enter Account / Reference: <strong className="font-mono text-slate-900">{station.stationCode}</strong></li>
+                <li>Enter your PIN to complete the transfer</li>
+              </ol>
             </div>
+
+            {/* Confirmation Code Submission Form */}
+            <form onSubmit={handleSubmitPayment} className="space-y-3 pt-1">
+              <label className="block text-xs font-bold text-slate-800">
+                After paying, enter your M-Pesa Transaction Reference Code:
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. QHK894120M"
+                  value={paymentRefInput}
+                  onChange={(e) => setPaymentRefInput(e.target.value.toUpperCase())}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-emerald-300 bg-white font-mono text-xs uppercase focus:outline-emerald-600"
+                />
+                <button
+                  type="submit"
+                  disabled={paymentSubmitting}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{paymentSubmitting ? 'Submitting...' : 'Submit Payment Ref'}</span>
+                </button>
+              </div>
+
+              {paymentSubmitMsg && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-semibold ${
+                    paymentSubmitMsg.type === 'success'
+                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      : 'bg-red-100 text-red-900 border border-red-300'
+                  }`}
+                >
+                  {paymentSubmitMsg.text}
+                </div>
+              )}
+
+              {station.activationPaymentRef && (
+                <div className="p-3 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-950 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>
+                    Payment Reference <strong>{station.activationPaymentRef}</strong> has been submitted. The Super Admin is verifying receipt of KSh 3,000 on <strong>0706184411</strong> and will approve your station.
+                  </span>
+                </div>
+              )}
+            </form>
           </div>
 
-          {/* Super Admin Notice */}
-          <div className="pt-2 text-xs text-slate-500">
-            <p>Super Admin approval required for <strong className="font-mono text-slate-700">{station.stationCode}</strong>.</p>
+          {/* Compliance Info */}
+          <div className="bg-slate-50 rounded-2xl p-4 text-left border border-slate-200 text-xs text-slate-600 space-y-1">
+            <div className="font-bold text-slate-800 flex items-center gap-1.5">
+              <FileCheck className="w-4 h-4 text-slate-700" />
+              <span>Inspection & Safety Compliance</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Address: <strong>{station.address}, {station.city}</strong> • Contact: <strong>{station.phone}</strong>. Once approved, you can immediately add your cylinder stock, pricing, and upload pictures.
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3 text-xs">
+            <button
+              onClick={fetchStationData}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Check Approval Status</span>
+            </button>
             <button
               onClick={() => logout()}
-              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-all"
             >
-              <span>Log Out to Sign In as Super Admin</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
             </button>
           </div>
         </div>
@@ -482,97 +652,143 @@ export const OwnerDashboard: React.FC = () => {
       {/* TAB 2: INVENTORY & STOCK MANAGEMENT */}
       {activeTab === 'inventory' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Station Stock & Pricing</h3>
               <p className="text-xs text-slate-500">
-                Manage LPG cylinder refills, brand exchange rates, and new cylinder package prices
+                Manage your LPG cooking gas cylinders, set refill and exchange rates, and upload product pictures
               </p>
             </div>
             <button
               onClick={() => setIsAddProductOpen(true)}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 self-start sm:self-auto transition-all"
             >
               <Plus className="w-4 h-4" />
               <span>Add Product</span>
             </button>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
-                  <tr>
-                    <th className="py-3 px-4">Product / Brand</th>
-                    <th className="py-3 px-4">Size</th>
-                    <th className="py-3 px-4">Refill Price</th>
-                    <th className="py-3 px-4">Exchange Price</th>
-                    <th className="py-3 px-4">New Cylinder</th>
-                    <th className="py-3 px-4">Stock</th>
-                    <th className="py-3 px-4">Adjust Stock</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {products.map((prod) => {
-                    const isLowStock = prod.stockQuantity <= prod.lowStockThreshold;
-                    return (
-                      <tr key={prod.id} className="hover:bg-slate-50/50">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{prod.name}</div>
-                          <div className="text-[11px] text-slate-400">{prod.brand}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-slate-800">{prod.cylinderSize}</span>
-                        </td>
-                        <td className="py-3 px-4 font-bold text-emerald-800">
-                          KSh {Number(prod.refillPrice).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 font-bold text-emerald-800">
-                          KSh {Number(prod.exchangePrice).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 font-bold text-emerald-800">
-                          KSh {Number(prod.newCylinderPrice).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`font-bold px-2 py-0.5 rounded-md ${
-                              isLowStock
-                                ? 'bg-red-100 text-red-800 animate-pulse'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {prod.stockQuantity} {isLowStock ? '(LOW)' : ''}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stockQuantity - 1)}
-                              className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100"
-                            >
-                              -
-                            </button>
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stockQuantity + 5)}
-                              className="px-2 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-100"
-                            >
-                              +5
-                            </button>
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stockQuantity + 10)}
-                              className="px-2 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-100"
-                            >
-                              +10
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {products.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center space-y-4 shadow-xs">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-inner">
+                <Package className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-slate-900 text-base">Your Station Stock & Pricing is Empty</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  You haven't listed any cooking gas cylinders yet. Click <strong>Add Product</strong> below to set up your stock, specify your refill and exchange pricing, and upload product pictures.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAddProductOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs inline-flex items-center gap-2 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Your First Product</span>
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Picture & Product</th>
+                      <th className="py-3 px-4">Size</th>
+                      <th className="py-3 px-4">Refill Price</th>
+                      <th className="py-3 px-4">Exchange Price</th>
+                      <th className="py-3 px-4">New Cylinder</th>
+                      <th className="py-3 px-4">Stock</th>
+                      <th className="py-3 px-4">Adjust Stock</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {products.map((prod) => {
+                      const isLowStock = prod.stockQuantity <= prod.lowStockThreshold;
+                      return (
+                        <tr key={prod.id} className="hover:bg-slate-50/50">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-11 h-11 rounded-xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center">
+                                {prod.imageUrl ? (
+                                  <img
+                                    src={prod.imageUrl}
+                                    alt={prod.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <ImageIcon className="w-5 h-5 text-slate-400" />
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">{prod.name}</div>
+                                <div className="text-[11px] text-slate-400">{prod.brand}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-semibold text-slate-800">{prod.cylinderSize}</span>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-emerald-800">
+                            KSh {Number(prod.refillPrice).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-emerald-800">
+                            KSh {Number(prod.exchangePrice).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-emerald-800">
+                            KSh {Number(prod.newCylinderPrice).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`font-bold px-2 py-0.5 rounded-md ${
+                                isLowStock
+                                  ? 'bg-red-100 text-red-800 animate-pulse'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {prod.stockQuantity} {isLowStock ? '(LOW)' : ''}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleUpdateStock(prod.id, prod.stockQuantity - 1)}
+                                className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100"
+                              >
+                                -
+                              </button>
+                              <button
+                                onClick={() => handleUpdateStock(prod.id, prod.stockQuantity + 5)}
+                                className="px-2 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-100"
+                              >
+                                +5
+                              </button>
+                              <button
+                                onClick={() => handleUpdateStock(prod.id, prod.stockQuantity + 10)}
+                                className="px-2 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold hover:bg-emerald-100"
+                              >
+                                +10
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => handleDeleteProduct(prod.id)}
+                              title="Delete Product"
+                              className="w-7 h-7 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -731,43 +947,46 @@ export const OwnerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ADD PRODUCT MODAL */}
+      {/* ADD PRODUCT MODAL WITH PICTURE UPLOAD */}
       {isAddProductOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
           <form
             onSubmit={handleAddProduct}
-            className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4"
+            className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4 my-8"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="font-bold text-base text-slate-900">Add New LPG Product to Station</h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900">Add New LPG Product</h3>
+                <p className="text-[11px] text-slate-500">Configure your stock, pricing, and product picture</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsAddProductOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-2 gap-3 text-xs max-h-[70vh] overflow-y-auto pr-1">
               <div className="col-span-2">
-                <label className="block font-semibold mb-1">Product Title</label>
+                <label className="block font-bold text-slate-800 mb-1">Product Title</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. TotalEnergies 13kg Gas Cylinder"
+                  placeholder="e.g. TotalEnergies 13kg Cooking Gas Cylinder"
                   value={newProduct.name}
                   onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-emerald-600 font-medium"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Brand</label>
+                <label className="block font-bold text-slate-800 mb-1">Brand</label>
                 <select
                   value={newProduct.brand}
                   onChange={(e) => setNewProduct({ ...newProduct, brand: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
                 >
                   <option value="TotalEnergies">TotalEnergies</option>
                   <option value="Rubis K-Gas">Rubis K-Gas</option>
@@ -775,83 +994,190 @@ export const OwnerDashboard: React.FC = () => {
                   <option value="Shell Gas">Shell Gas</option>
                   <option value="Pro Gas">Pro Gas</option>
                   <option value="Hass Gas">Hass Gas</option>
+                  <option value="Ola Energy">Ola Energy</option>
                   <option value="Generic">Generic / Accessory</option>
                 </select>
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Cylinder Size</label>
+                <label className="block font-bold text-slate-800 mb-1">Cylinder Size</label>
                 <select
                   value={newProduct.cylinderSize}
                   onChange={(e) => setNewProduct({ ...newProduct, cylinderSize: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
                 >
                   <option value="6kg">6kg Cylinder</option>
                   <option value="13kg">13kg Cylinder</option>
                   <option value="22.5kg">22.5kg Commercial</option>
                   <option value="45kg">45kg Industrial</option>
-                  <option value="Accessory">Accessory</option>
+                  <option value="Accessory">Accessory / Burner / Regulator</option>
                 </select>
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Refill Price (KSh)</label>
+                <label className="block font-bold text-slate-800 mb-1">Refill Price (KSh)</label>
                 <input
                   type="number"
                   required
+                  placeholder="e.g. 1250"
                   value={newProduct.refillPrice}
                   onChange={(e) => setNewProduct({ ...newProduct, refillPrice: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-emerald-600 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Exchange Price (KSh)</label>
+                <label className="block font-bold text-slate-800 mb-1">Exchange Price (KSh)</label>
                 <input
                   type="number"
                   required
+                  placeholder="e.g. 1350"
                   value={newProduct.exchangePrice}
                   onChange={(e) => setNewProduct({ ...newProduct, exchangePrice: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-emerald-600 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">New Complete Cylinder (KSh)</label>
+                <label className="block font-bold text-slate-800 mb-1">New Complete Cylinder (KSh)</label>
                 <input
                   type="number"
                   required
+                  placeholder="e.g. 4800"
                   value={newProduct.newCylinderPrice}
                   onChange={(e) => setNewProduct({ ...newProduct, newCylinderPrice: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-emerald-600 font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Stock Quantity</label>
+                <label className="block font-bold text-slate-800 mb-1">Initial Stock Quantity</label>
                 <input
                   type="number"
                   required
+                  placeholder="e.g. 25"
                   value={newProduct.stockQuantity}
                   onChange={(e) => setNewProduct({ ...newProduct, stockQuantity: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-emerald-600 font-semibold"
                 />
+              </div>
+
+              {/* PRODUCT PICTURE UPLOAD & SELECTION */}
+              <div className="col-span-2 pt-2 border-t border-slate-100 space-y-2">
+                <label className="block font-bold text-slate-900">
+                  Product Picture / Photo
+                </label>
+
+                {/* Upload from Computer / Phone */}
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 font-bold text-slate-700 flex items-center gap-1.5 transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Picture File</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[11px] text-slate-400">or paste image link below</span>
+                </div>
+
+                {/* Image URL input */}
+                <input
+                  type="url"
+                  placeholder="https://... or upload a file above"
+                  value={newProduct.imageUrl}
+                  onChange={(e) => setNewProduct({ ...newProduct, imageUrl: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
+                />
+
+                {/* Quick Presets for realistic Kenyan LPG cylinders */}
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-500 font-semibold">Or pick a quick preset image:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewProduct({
+                          ...newProduct,
+                          imageUrl: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=400&auto=format&fit=crop&q=80',
+                        })
+                      }
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-medium text-slate-700"
+                    >
+                      6kg Cylinder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewProduct({
+                          ...newProduct,
+                          imageUrl: 'https://images.unsplash.com/photo-1542013936693-884638332954?w=400&auto=format&fit=crop&q=80',
+                        })
+                      }
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-medium text-slate-700"
+                    >
+                      13kg Cylinder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewProduct({
+                          ...newProduct,
+                          imageUrl: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=400&auto=format&fit=crop&q=80',
+                        })
+                      }
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-medium text-slate-700"
+                    >
+                      Afrigas / Blue
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewProduct({
+                          ...newProduct,
+                          imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=400&auto=format&fit=crop&q=80',
+                        })
+                      }
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-medium text-slate-700"
+                    >
+                      Regulator / Burner
+                    </button>
+                  </div>
+                </div>
+
+                {/* Picture Preview */}
+                {newProduct.imageUrl && (
+                  <div className="mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <img
+                      src={newProduct.imageUrl}
+                      alt="Product Preview"
+                      className="w-14 h-14 rounded-lg object-cover border border-slate-200 bg-white"
+                    />
+                    <div className="text-[11px] text-slate-600">
+                      <div className="font-bold text-slate-800">Picture Preview</div>
+                      <div className="text-emerald-700 font-semibold">Image loaded successfully</div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="pt-2 flex gap-2">
+            <div className="pt-2 flex gap-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setIsAddProductOpen(false)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold"
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs"
+                disabled={submittingProduct}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-all"
               >
-                Save Product
+                {submittingProduct ? 'Saving Product...' : 'Save Product'}
               </button>
             </div>
           </form>

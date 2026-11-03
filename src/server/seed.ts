@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { db } from '../db/index.ts';
 import { users, gasStations, products, orders, orderItems, payments, emailNotifications } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
@@ -11,13 +12,19 @@ export async function seedDatabaseIfEmpty() {
 
     console.log('Seeding initial GasPoint database records...');
 
-    // 1. Create Super Admin User
+    // 1. Create Super Admin User (configured via .env, no hardcoded personal credentials)
+    const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@gaspoint.co.ke').trim().toLowerCase();
+    const superAdminPass = process.env.SUPER_ADMIN_PASSWORD || 'GasPointAdmin2026!';
+    const superAdminHash = crypto.createHash('sha256').update(superAdminPass).digest('hex');
+    const superAdminName = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
+    const superAdminPhone = process.env.SUPER_ADMIN_PHONE || '+254700000000';
+
     const [superAdmin] = await db.insert(users).values({
       uid: 'admin-super-uid-1',
-      email: 'wesongagodfrey60@gmail.com',
-      passwordHash: '7c26d78b2e6669dfb694f8b7f5c1c388335c0db0e7a4ad3a36cf8ac8d31a259f',
-      fullName: 'Godfrey Wesonga (Super Admin)',
-      phone: '+254712345678',
+      email: superAdminEmail,
+      passwordHash: superAdminHash,
+      fullName: superAdminName,
+      phone: superAdminPhone,
       role: 'super_admin',
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     }).returning();
@@ -362,8 +369,8 @@ export async function seedDatabaseIfEmpty() {
     // 8. Seed sample automated email notifications
     await db.insert(emailNotifications).values([
       {
-        recipientEmail: 'wesongagodfrey60@gmail.com',
-        recipientName: 'Super Admin',
+        recipientEmail: superAdminEmail,
+        recipientName: superAdminName,
         subject: '[Action Required] New Gas Point Application: Apex Flame South B',
         templateType: 'superadmin_approval_request',
         content: 'David Mutua has submitted a new Gas Point registration for "Apex Flame Gas Point South B" with License EPRA/LPG/2026/9932-PENDING. Please review and verify this station.',

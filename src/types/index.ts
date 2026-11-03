@@ -30,6 +30,8 @@ export interface GasStation {
   rating: number | string;
   ratingCount: number;
   rejectionReason?: string;
+  activationFeePaid?: boolean;
+  activationPaymentRef?: string;
   approvedAt?: string;
   createdAt: string;
   // Computed / joined fields

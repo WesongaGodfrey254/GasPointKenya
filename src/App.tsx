@@ -149,7 +149,7 @@ function AppContent() {
               <div className="space-y-1 text-xs text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <Phone className="w-3.5 h-3.5 text-slate-300" />
-                  <span>24/7 Hotline: +254 700 000 999</span>
+                  <span>24/7 Hotline: +254 706184411</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-slate-300" />
@@ -161,10 +161,10 @@ function AppContent() {
 
             <div className="space-y-2">
               <div className="text-white font-bold text-xs uppercase tracking-wider">
-                System Administration
+                
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Administered by Godfrey Wesonga (Super Admin). Running with Cloud SQL PostgreSQL database & Safaricom Daraja M-Pesa API integration.
+                
               </p>
             </div>
           </div>

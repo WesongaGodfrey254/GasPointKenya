@@ -40,6 +40,8 @@ export const gasStations = pgTable('gas_stations', {
   rating: numeric('rating', { precision: 3, scale: 2 }).default('4.80'),
   ratingCount: integer('rating_count').default(12),
   rejectionReason: text('rejection_reason'),
+  activationFeePaid: boolean('activation_fee_paid').default(false),
+  activationPaymentRef: text('activation_payment_ref'),
   approvedAt: timestamp('approved_at'),
   createdAt: timestamp('created_at').defaultNow(),
 });

@@ -43,7 +43,9 @@ export const SuperAdminDashboard: React.FC = () => {
       const [stRes, anRes, emRes, usrRes] = await Promise.all([
         fetch('/api/stations?all=true'),
         fetch('/api/analytics/platform'),
-        fetch('/api/emails'),
+        fetch('/api/emails?role=super_admin', {
+          headers: { 'x-user-role': 'super_admin' },
+        }),
         fetch('/api/users'),
       ]);
 
@@ -171,7 +173,7 @@ export const SuperAdminDashboard: React.FC = () => {
             GasPoint Platform Governance Console
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 max-w-xl">
-            Logged in as Godfrey Wesonga. Verify gas point owners, manage compliance, inspect daily sales trends, and delete mini-admins or user accounts.
+            Logged in as {currentUser?.fullName || 'Super Administrator'}. Verify gas point owners, manage compliance, inspect daily sales trends, and delete mini-admins or user accounts.
           </p>
         </div>
 
@@ -346,6 +348,22 @@ export const SuperAdminDashboard: React.FC = () => {
                       <div>
                         Delivery Radius: <strong className="text-slate-800">{st.deliveryRadiusKm} km</strong>
                       </div>
+                    </div>
+
+                    {/* Activation Fee Verification Status (KSh 3,000 on 0706184411) */}
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-bold text-slate-700">KSh 3,000 Activation Fee (to 0706184411):</span>
+                      {st.activationPaymentRef ? (
+                        <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-md border border-emerald-300">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>M-Pesa Ref: {st.activationPaymentRef}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-md border border-amber-300">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Awaiting Payment Reference on 0706184411</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
