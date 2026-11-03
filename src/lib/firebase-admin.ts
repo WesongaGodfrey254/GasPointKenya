@@ -1,10 +1,21 @@
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+let projectId = process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID;
+
+if (!projectId) {
+  try {
+    // @ts-ignore
+    const local = await import('../../firebase-applet-config.json');
+    projectId = local.default?.projectId || local.projectId;
+  } catch {
+    projectId = 'gaspoint-kenya';
+  }
+}
 
 if (!getApps().length) {
   initializeApp({
-    projectId: firebaseConfig.projectId,
+    projectId: projectId || 'gaspoint-kenya',
   });
 }
 
