@@ -9,7 +9,10 @@ declare global {
 
 export const createPool = () => {
   if (!global._postgresPool) {
-    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    // GASPOINT_DATABASE_URL lets this app use its own isolated database while
+    // the platform-provided DATABASE_URL remains untouched for other apps.
+    const connectionString =
+      process.env.GASPOINT_DATABASE_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
     if (connectionString) {
       global._postgresPool = new Pool({
         connectionString,

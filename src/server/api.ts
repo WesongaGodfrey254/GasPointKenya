@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import crypto from 'crypto';
 import { db } from '../db/index.ts';
+import { hashPassword, verifyPassword } from './security.ts';
 import {
   users,
   gasStations,
@@ -20,31 +20,6 @@ const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || 'admin@gaspoint.co.k
 const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || 'GasPointAdmin2026!';
 const SUPER_ADMIN_NAME = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
 const SUPER_ADMIN_PHONE = process.env.SUPER_ADMIN_PHONE || '+254700000000';
-
-// Secure Password Hashing (Salted PBKDF2 with SHA-256 legacy fallback)
-function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-  return `pbkdf2:${salt}:${hash}`;
-}
-
-function verifyPassword(password: string, storedHash: string | null | undefined): boolean {
-  if (!storedHash) return false;
-  if (storedHash.startsWith('pbkdf2:')) {
-    const parts = storedHash.split(':');
-    if (parts.length !== 3) return false;
-    const [, salt, originalHash] = parts;
-    const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-    try {
-      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'));
-    } catch {
-      return false;
-    }
-  }
-  // Backwards compatibility for existing SHA-256 legacy hashes
-  const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
-  return legacyHash === storedHash;
-}
 
 // User object sanitizer: NEVER expose password_hash in API responses
 function sanitizeUser(user: any) {
@@ -214,6 +189,13 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Password must be at least 5 characters' });
     }
 
+    // Only self-service roles can be created publicly. Super Admin accounts
+    // are provisioned from the configured SUPER_ADMIN_EMAIL only.
+    const requestedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
+    if (!['customer', 'gas_owner'].includes(requestedRole)) {
+      return res.status(400).json({ error: 'Invalid account type. Choose customer or gas provider.' });
+    }
+
     const cleanEmail = email.trim().toLowerCase();
 
     // Check duplicate email
@@ -223,7 +205,7 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
     }
 
     const isSuperAdminEmail = cleanEmail === SUPER_ADMIN_EMAIL;
-    const assignedRole = isSuperAdminEmail ? 'super_admin' : role;
+    const assignedRole = isSuperAdminEmail ? 'super_admin' : requestedRole;
     const uid = `${assignedRole}-${Date.now()}`;
     const pHash = hashPassword(password);
 
@@ -300,7 +282,10 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
     }
 
     const isPrimaryAdmin = email.toLowerCase() === SUPER_ADMIN_EMAIL;
-    const assignedRole = isPrimaryAdmin ? 'super_admin' : (role || 'customer');
+    const requestedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
+    const assignedRole = isPrimaryAdmin
+      ? 'super_admin'
+      : (['customer', 'gas_owner'].includes(requestedRole) ? requestedRole : 'customer');
 
     const existing = await db.select().from(users).where(eq(users.uid, uid)).limit(1);
 
@@ -1524,8 +1509,10 @@ apiRouter.get('/emails', async (req: Request, res: Response) => {
       .from(emailNotifications)
       .orderBy(desc(emailNotifications.sentAt));
 
-    // 1. SUPER ADMIN: Can see the WHOLE email archive across the platform
-    let isSuperAdmin = userRole === 'super_admin' || userEmail === SUPER_ADMIN_EMAIL;
+    // 1. SUPER ADMIN: Can see the WHOLE email archive across the platform.
+    // The role header alone is not trusted; the account must match the
+    // configured Super Admin email or be verified as a Super Admin in the DB.
+    let isSuperAdmin = userEmail === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin && userId) {
       const adminCheck = await db
         .select()
@@ -1617,38 +1604,6 @@ apiRouter.get('/emails', async (req: Request, res: Response) => {
 
     // Unauthenticated or unknown: return empty array to prevent unauthorized data exposure
     return res.json([]);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-apiRouter.post('/emails/send-test', async (req: Request, res: Response) => {
-  try {
-    const { recipientEmail, recipientName, subject, content } = req.body;
-    const callerEmail = ((req.headers['x-user-email'] as string) || '').trim().toLowerCase();
-    const callerRole = ((req.headers['x-user-role'] as string) || '').trim().toLowerCase();
-
-    // If caller is not Super Admin, lock recipientEmail to their own email
-    let finalRecipientEmail = recipientEmail;
-    if (callerRole !== 'super_admin' && callerEmail !== SUPER_ADMIN_EMAIL) {
-      if (callerEmail) {
-        finalRecipientEmail = callerEmail;
-      }
-    }
-
-    const [sent] = await db
-      .insert(emailNotifications)
-      .values({
-        recipientEmail: finalRecipientEmail || SUPER_ADMIN_EMAIL,
-        recipientName: recipientName || 'GasPoint User',
-        subject: subject || 'Test Notification from GasPoint System',
-        templateType: 'custom_alert',
-        content: content || 'Automated email system is working properly.',
-        status: 'sent',
-      })
-      .returning();
-
-    return res.json(sent);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

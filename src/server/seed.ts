@@ -1,7 +1,7 @@
-import crypto from 'crypto';
 import { db } from '../db/index.ts';
+import { hashPassword } from './security.ts';
 import { users, gasStations, products, orders, orderItems, payments, emailNotifications } from '../db/schema.ts';
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 export async function ensureTablesExist() {
   const tableStatements = [
@@ -142,7 +142,7 @@ export async function seedDatabaseIfEmpty() {
     // 1. Create Super Admin User (configured via .env, no hardcoded personal credentials)
     const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@gaspoint.co.ke').trim().toLowerCase();
     const superAdminPass = process.env.SUPER_ADMIN_PASSWORD || 'GasPointAdmin2026!';
-    const superAdminHash = crypto.createHash('sha256').update(superAdminPass).digest('hex');
+    const superAdminHash = hashPassword(superAdminPass);
     const superAdminName = process.env.SUPER_ADMIN_NAME || 'Super Administrator';
     const superAdminPhone = process.env.SUPER_ADMIN_PHONE || '+254700000000';
 
