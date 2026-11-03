@@ -53,16 +53,24 @@ function sanitizeUser(user: any) {
   return safeUser;
 }
 
-// Ensure DB is seeded on first API call
-let isSeeded = false;
+// Ensure DB is initialized and seeded before handling API requests
+let seedPromise: Promise<void> | null = null;
+async function ensureInitialized() {
+  if (!seedPromise) {
+    seedPromise = seedDatabaseIfEmpty().catch((err) => {
+      console.error('Database initialization error:', err);
+      seedPromise = null; // Allow retry on subsequent request if failed
+      throw err;
+    });
+  }
+  return seedPromise;
+}
+
 apiRouter.use(async (_req, _res, next) => {
-  if (!isSeeded) {
-    try {
-      await seedDatabaseIfEmpty();
-      isSeeded = true;
-    } catch (e) {
-      console.error('Seed error:', e);
-    }
+  try {
+    await ensureInitialized();
+  } catch (e) {
+    console.error('Seed middleware error:', e);
   }
   next();
 });
