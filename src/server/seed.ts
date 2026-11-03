@@ -1,10 +1,133 @@
 import crypto from 'crypto';
 import { db } from '../db/index.ts';
 import { users, gasStations, products, orders, orderItems, payments, emailNotifications } from '../db/schema.ts';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+
+export async function ensureTablesExist() {
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "users" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "uid" text NOT NULL UNIQUE,
+        "email" text NOT NULL,
+        "password_hash" text,
+        "full_name" text,
+        "phone" text,
+        "role" text DEFAULT 'customer' NOT NULL,
+        "avatar_url" text,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "gas_stations" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "owner_id" integer REFERENCES "users"("id"),
+        "business_name" text NOT NULL,
+        "station_code" text NOT NULL UNIQUE,
+        "email" text NOT NULL,
+        "phone" text NOT NULL,
+        "address" text NOT NULL,
+        "city" text NOT NULL,
+        "county" text,
+        "delivery_radius_km" integer DEFAULT 15,
+        "operating_hours" text DEFAULT '7:30 AM - 8:30 PM',
+        "license_number" text,
+        "status" text DEFAULT 'pending_approval' NOT NULL,
+        "rating" numeric(3, 2) DEFAULT '4.80',
+        "rating_count" integer DEFAULT 12,
+        "rejection_reason" text,
+        "activation_fee_paid" boolean DEFAULT false,
+        "activation_payment_ref" text,
+        "approved_at" timestamp,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "products" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "station_id" integer REFERENCES "gas_stations"("id"),
+        "name" text NOT NULL,
+        "brand" text NOT NULL,
+        "cylinder_size" text NOT NULL,
+        "category" text DEFAULT 'lpg_gas' NOT NULL,
+        "refill_price" numeric(10, 2) NOT NULL,
+        "exchange_price" numeric(10, 2) NOT NULL,
+        "new_cylinder_price" numeric(10, 2) NOT NULL,
+        "description" text,
+        "stock_quantity" integer DEFAULT 0 NOT NULL,
+        "low_stock_threshold" integer DEFAULT 5 NOT NULL,
+        "image_url" text,
+        "is_active" boolean DEFAULT true NOT NULL,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "orders" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "order_number" text NOT NULL UNIQUE,
+        "user_id" integer REFERENCES "users"("id"),
+        "station_id" integer REFERENCES "gas_stations"("id"),
+        "order_type" text DEFAULT 'refill' NOT NULL,
+        "delivery_method" text DEFAULT 'delivery' NOT NULL,
+        "delivery_address" text,
+        "customer_phone" text NOT NULL,
+        "customer_name" text NOT NULL,
+        "subtotal" numeric(10, 2) NOT NULL,
+        "delivery_fee" numeric(10, 2) DEFAULT '0.00' NOT NULL,
+        "total_amount" numeric(10, 2) NOT NULL,
+        "order_status" text DEFAULT 'pending' NOT NULL,
+        "payment_status" text DEFAULT 'pending' NOT NULL,
+        "delivery_person_name" text,
+        "delivery_person_phone" text,
+        "notes" text,
+        "estimated_delivery_minutes" integer DEFAULT 35,
+        "delivered_at" timestamp,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "order_items" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "order_id" integer REFERENCES "orders"("id"),
+        "product_id" integer REFERENCES "products"("id"),
+        "product_name" text NOT NULL,
+        "cylinder_size" text NOT NULL,
+        "order_mode" text DEFAULT 'refill' NOT NULL,
+        "quantity" integer DEFAULT 1 NOT NULL,
+        "unit_price" numeric(10, 2) NOT NULL,
+        "subtotal" numeric(10, 2) NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS "payments" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "order_id" integer REFERENCES "orders"("id"),
+        "user_id" integer REFERENCES "users"("id"),
+        "amount" numeric(10, 2) NOT NULL,
+        "method" text DEFAULT 'mpesa' NOT NULL,
+        "phone_number" text NOT NULL,
+        "mpesa_receipt_number" text,
+        "status" text DEFAULT 'pending' NOT NULL,
+        "checkout_request_id" text,
+        "merchant_request_id" text,
+        "created_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "email_notifications" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "recipient_email" text NOT NULL,
+        "recipient_name" text,
+        "subject" text NOT NULL,
+        "template_type" text NOT NULL,
+        "content" text NOT NULL,
+        "status" text DEFAULT 'sent' NOT NULL,
+        "sent_at" timestamp DEFAULT now()
+      );
+    `);
+  } catch (err) {
+    console.error('Error ensuring tables exist:', err);
+  }
+}
 
 export async function seedDatabaseIfEmpty() {
   try {
+    await ensureTablesExist();
+
     const existingUsers = await db.select().from(users).limit(1);
     if (existingUsers.length > 0) {
       return; // Already seeded
