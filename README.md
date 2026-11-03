@@ -72,3 +72,15 @@ npm run dev
 ```
 
 Visit [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## Deployment
+
+- **Production URL:** [https://gaspointkenya.vercel.app](https://gaspointkenya.vercel.app)
+- **Auto-deploy:** Pushes to the `main` branch of
+  [WesongaGodfrey254/GasPointKenya](https://github.com/WesongaGodfrey254/GasPointKenya)
+  are deployed automatically by Vercel.
+- **Database isolation:** Production uses a dedicated `gaspoint` PostgreSQL
+  database configured through `GASPOINT_DATABASE_URL`, keeping GasPoint data
+  separate from other projects on the same database host.
