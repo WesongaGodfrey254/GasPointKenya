@@ -118,7 +118,7 @@ function AppContent() {
                 <span>GASPOINT KENYA</span>
               </div>
               <p className="text-slate-400 text-xs leading-relaxed">
-                Centralized LPG cooking gas sales, multi-provider depot marketplace, stock management, and Safaricom M-Pesa automated dispatch system.
+                Centralized LPG cooking gas sales, multi-provider depot marketplace, stock management, free delivery, and flexible pay-on-delivery or pay-at-station pickup.
               </p>
             </div>
 

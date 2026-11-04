@@ -51,7 +51,7 @@ export const products = pgTable('products', {
   id: serial('id').primaryKey(),
   stationId: integer('station_id').references(() => gasStations.id),
   name: text('name').notNull(),
-  brand: text('brand').notNull(), // 'TotalEnergies', 'Rubis K-Gas', 'Afrigas', 'Shell Gas', 'Pro Gas', 'Hass Gas', etc.
+  brand: text('brand').notNull(), // 'Taifa Gas', 'Lake Gas', 'Galana Gas', 'Supa Gas', 'Mpishi Gas', 'Sea gas', 'M Gas', 'TotalEnergies', 'Rubis K-Gas', 'Afrigas', 'Shell Gas', 'Pro Gas', 'Hass Gas', etc.
   cylinderSize: text('cylinder_size').notNull(), // '6kg', '13kg', '22.5kg', '45kg', 'Accessory'
   category: text('category').notNull().default('lpg_gas'), // 'lpg_gas', 'accessory'
   refillPrice: numeric('refill_price', { precision: 10, scale: 2 }).notNull(),
@@ -80,7 +80,7 @@ export const orders = pgTable('orders', {
   deliveryFee: numeric('delivery_fee', { precision: 10, scale: 2 }).notNull().default('0.00'),
   totalAmount: numeric('total_amount', { precision: 10, scale: 2 }).notNull(),
   orderStatus: text('order_status').notNull().default('pending'), // 'pending' | 'confirmed' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled'
-  paymentStatus: text('payment_status').notNull().default('pending'), // 'pending' | 'completed' | 'failed'
+  paymentStatus: text('payment_status').notNull().default('pending'), // 'pending' | 'completed' | 'failed' (collected on delivery / at station pickup)
   deliveryPersonName: text('delivery_person_name'),
   deliveryPersonPhone: text('delivery_person_phone'),
   notes: text('notes'),
@@ -102,13 +102,13 @@ export const orderItems = pgTable('order_items', {
   subtotal: numeric('subtotal', { precision: 10, scale: 2 }).notNull(),
 });
 
-// Payments (M-Pesa & others)
+// Payments (pay on delivery / pay at station pickup)
 export const payments = pgTable('payments', {
   id: serial('id').primaryKey(),
   orderId: integer('order_id').references(() => orders.id),
   userId: integer('user_id').references(() => users.id),
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
-  method: text('method').notNull().default('mpesa'),
+  method: text('method').notNull().default('pay_on_delivery'),
   phoneNumber: text('phone_number').notNull(),
   mpesaReceiptNumber: text('mpesa_receipt_number'),
   status: text('status').notNull().default('pending'), // 'pending' | 'successful' | 'failed'

@@ -649,7 +649,7 @@ export const SuperAdminDashboard: React.FC = () => {
                 Automated Transactional Emails & Audit Trail
               </h2>
               <p className="text-xs text-slate-500">
-                Live delivery status alerts, owner approval notices, and M-Pesa receipts sent by the system
+                Live delivery status alerts, owner approval notices, and pay-on-delivery / pay-at-station notices sent by the system
               </p>
             </div>
           </div>

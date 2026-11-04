@@ -6,13 +6,13 @@ import {
   Clock,
   Truck,
   Phone,
-  ShieldCheck,
   PackageCheck,
   Receipt,
   X,
   Flame,
   AlertTriangle,
   RefreshCw,
+  Wallet,
 } from 'lucide-react';
 
 interface OrderTrackerModalProps {
@@ -181,6 +181,41 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 </div>
               </div>
 
+              {/* Payment Method Notice */}
+              <div
+                className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                  order.paymentStatus === 'completed'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    order.paymentStatus === 'completed'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm">
+                    {order.paymentStatus === 'completed'
+                      ? 'Payment completed'
+                      : order.deliveryMethod === 'pickup'
+                      ? 'You will pay at station at pickup'
+                      : 'You will make your payment on delivery'}
+                  </div>
+                  <p className="text-xs mt-1 opacity-80">
+                    {order.paymentStatus === 'completed'
+                      ? 'Thank you. Your payment for this order has been received.'
+                      : order.deliveryMethod === 'pickup'
+                      ? 'No upfront payment is required. Please pay when you collect your order at the station.'
+                      : 'No upfront payment is required. Please pay the rider when your order is delivered.'}
+                  </p>
+                </div>
+              </div>
+
               {/* Visual Progress Stepper */}
               <div className="py-2">
                 <div className="relative flex items-center justify-between">
@@ -190,7 +225,10 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   {/* Steps */}
                   {[
                     { label: 'Placed', icon: Receipt },
-                    { label: 'Paid (M-Pesa)', icon: ShieldCheck },
+                    {
+                      label: order.deliveryMethod === 'pickup' ? 'Pay at Station' : 'Pay on Delivery',
+                      icon: Wallet,
+                    },
                     { label: 'Safety Check', icon: Flame },
                     { label: 'Dispatched', icon: Truck },
                     { label: 'Delivered', icon: PackageCheck },
@@ -310,10 +348,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span>Delivery Fee:</span>
-                    <span>KSh {Number(order.deliveryFee).toLocaleString()}</span>
+                    <span className="font-semibold text-emerald-700">FREE</span>
                   </div>
                   <div className="flex justify-between font-bold text-sm text-slate-900 pt-1.5 border-t border-slate-200">
-                    <span>Total Amount Paid:</span>
+                    <span>
+                      {order.paymentStatus === 'completed' ? 'Total Amount Paid:' : 'Total Amount Payable:'}
+                    </span>
                     <span className="text-emerald-700">KSh {Number(order.totalAmount).toLocaleString()}</span>
                   </div>
                 </div>

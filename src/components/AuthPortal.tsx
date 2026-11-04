@@ -125,7 +125,7 @@ export const AuthPortal: React.FC = () => {
               GASPOINT KENYA
             </h1>
             <p className="text-xs text-emerald-200/80 max-w-md mx-auto">
-              LPG Gas Sales, Ordering, Payment & Delivery Management System
+              LPG Gas Sales, Ordering & Delivery Management System
             </p>
           </div>
 

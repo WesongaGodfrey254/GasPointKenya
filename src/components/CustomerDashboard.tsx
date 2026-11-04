@@ -143,7 +143,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onOpenSafe
             Fast, Reliable Cooking Gas Delivered to Your Doorstep.
           </h1>
           <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-            Choose your nearest verified GasPoint depot, select your cylinder refill or exchange, and pay seamlessly via Safaricom M-Pesa.
+            Choose your nearest verified GasPoint depot, select your cylinder refill or exchange, and pay on delivery or at the station when you pick up.
           </p>
 
           <div className="pt-2 flex flex-wrap gap-3">
@@ -298,7 +298,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onOpenSafe
                     {selectedStation.businessName} Catalogue
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {selectedStation.address} • Phone: {selectedStation.phone} • Delivery Fee: KSh 150 (Or Free Pickup)
+                    {selectedStation.address} • Phone: {selectedStation.phone} • FREE Delivery & Station Pickup
                   </p>
                 </div>
 
@@ -537,8 +537,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onOpenSafe
                       >
                         {ord.orderStatus.replace('_', ' ')}
                       </span>
-                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                        M-Pesa {ord.paymentStatus}
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
+                          ord.paymentStatus === 'completed'
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : 'text-amber-700 bg-amber-50 border-amber-200'
+                        }`}
+                      >
+                        {ord.paymentStatus === 'completed'
+                          ? 'Paid'
+                          : ord.deliveryMethod === 'pickup'
+                          ? 'Pay at station'
+                          : 'Pay on delivery'}
                       </span>
                     </div>
 

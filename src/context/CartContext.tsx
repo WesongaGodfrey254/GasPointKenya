@@ -143,7 +143,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const deliveryFee = deliveryMethod === 'pickup' || subtotal === 0 ? 0 : 150;
+  // Delivery is free across all providers. Customers only pay for the products
+  // on delivery or at the station when picking up.
+  const deliveryFee = 0;
   const total = subtotal > 0 ? subtotal + deliveryFee : 0;
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 

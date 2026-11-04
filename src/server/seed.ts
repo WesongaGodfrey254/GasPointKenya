@@ -98,7 +98,7 @@ export async function ensureTablesExist() {
       "order_id" integer REFERENCES "orders"("id"),
       "user_id" integer REFERENCES "users"("id"),
       "amount" numeric(10, 2) NOT NULL,
-      "method" text DEFAULT 'mpesa' NOT NULL,
+      "method" text DEFAULT 'pay_on_delivery' NOT NULL,
       "phone_number" text NOT NULL,
       "mpesa_receipt_number" text,
       "status" text DEFAULT 'pending' NOT NULL,
@@ -418,10 +418,10 @@ export async function seedDatabaseIfEmpty() {
       customerPhone: '+254790112233',
       customerName: 'Sarah Mwangi',
       subtotal: '2800.00',
-      deliveryFee: '150.00',
-      totalAmount: '2950.00',
+      deliveryFee: '0.00',
+      totalAmount: '2800.00',
       orderStatus: 'out_for_delivery',
-      paymentStatus: 'completed',
+      paymentStatus: 'pending',
       deliveryPersonName: 'Jackson Mutiso',
       deliveryPersonPhone: '+254714556677',
       estimatedDeliveryMinutes: 20,
@@ -442,13 +442,10 @@ export async function seedDatabaseIfEmpty() {
     await db.insert(payments).values({
       orderId: sampleOrder1.id,
       userId: sampleCustomer.id,
-      amount: '2950.00',
-      method: 'mpesa',
+      amount: '2800.00',
+      method: 'pay_on_delivery',
       phoneNumber: '254790112233',
-      mpesaReceiptNumber: 'QHK891290K',
-      status: 'successful',
-      checkoutRequestId: 'ws_CO_23102026_89123',
-      merchantRequestId: 'MR-9041-WESTLANDS',
+      status: 'pending',
     });
 
     // Delivered Order
@@ -462,8 +459,8 @@ export async function seedDatabaseIfEmpty() {
       customerPhone: '+254790112233',
       customerName: 'Sarah Mwangi',
       subtotal: '4800.00',
-      deliveryFee: '150.00',
-      totalAmount: '4950.00',
+      deliveryFee: '0.00',
+      totalAmount: '4800.00',
       orderStatus: 'delivered',
       paymentStatus: 'completed',
       deliveryPersonName: 'Jackson Mutiso',
@@ -486,10 +483,9 @@ export async function seedDatabaseIfEmpty() {
     await db.insert(payments).values({
       orderId: sampleOrder2.id,
       userId: sampleCustomer.id,
-      amount: '4950.00',
-      method: 'mpesa',
+      amount: '4800.00',
+      method: 'pay_on_delivery',
       phoneNumber: '254790112233',
-      mpesaReceiptNumber: 'QHJ554289M',
       status: 'successful',
     });
 
@@ -506,9 +502,9 @@ export async function seedDatabaseIfEmpty() {
       {
         recipientEmail: 'orders@westlandsgashub.co.ke',
         recipientName: 'TotalEnergies Westlands Hub',
-        subject: 'New Order Received #GP-2026-9041 (M-Pesa Verified)',
+        subject: 'New Order Received #GP-2026-9041 (Pay on Delivery)',
         templateType: 'order_receipt',
-        content: 'Customer Sarah Mwangi placed an order for TotalEnergies 13kg refill. Total paid: Ksh 2,950 via M-Pesa (Ref: QHK891290K). Delivery to Woodvale Grove, Westlands.',
+        content: 'Customer Sarah Mwangi placed an order for TotalEnergies 13kg refill. Total: Ksh 2,800 with free delivery to Woodvale Grove, Westlands. You will make your payment on delivery.',
         status: 'sent',
       },
       {

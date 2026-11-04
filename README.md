@@ -10,11 +10,15 @@ GasPoint is a multi-provider LPG cooking gas marketplace, stock & pricing manage
 
 ## Features
 
-- **Multi-Provider Marketplace**: Browse authorized gas depots by proximity and brand (TotalEnergies, Rubis K-Gas, Afrigas, Pro Gas, etc.).
+- **Multi-Provider Marketplace**: Browse authorized gas depots by proximity and brand (Taifa Gas, Lake Gas, Galana Gas, Supa Gas, Mpishi Gas, Sea gas, M Gas, TotalEnergies, Rubis K-Gas, Afrigas, Pro Gas, etc.).
+- **Free Delivery & Pickup**: Delivery is free across all providers. Customers can also choose free station pickup.
+- **Pay on Delivery / Pay at Station**: Customers complete their order without upfront payment. They pay on delivery, or at the station when picking up.
+  - Order confirmation: **“You will make your payment on delivery”** or **“You will pay at station at pickup.”**
 - **Provider Dashboard**:
   - Independent stock & custom pricing (refill, exchange, and new cylinder rates).
   - Custom product photo uploads & presets.
   - Order dispatch & delivery rider tracking.
+  - Payment collection confirmation for delivered / picked-up orders.
 - **Onboarding & Approval Flow**:
   - Providers register and receive EPRA verification guidelines.
   - Account activation fee: **KSh 3,000** payable via M-Pesa to **0706184411**.

@@ -1110,8 +1110,13 @@ apiRouter.post('/orders', async (req: Request, res: Response) => {
       }
     }
 
-    const deliveryFee = deliveryMethod === 'pickup' ? 0 : 150;
+    // Delivery is free across all providers.
+    const deliveryFee = 0;
     const totalAmount = computedSubtotal + deliveryFee;
+    const paymentNotice =
+      deliveryMethod === 'pickup'
+        ? 'You will pay at station at pickup.'
+        : 'You will make your payment on delivery.';
     const orderNumber = `GP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const [newOrder] = await db
@@ -1172,7 +1177,7 @@ apiRouter.post('/orders', async (req: Request, res: Response) => {
         customerName,
         `Order Received #${orderNumber} - ${stationName}`,
         'order_placed',
-        `Hello ${customerName}, your gas order #${orderNumber} has been received by ${stationName}. Total: Ksh ${totalAmount.toLocaleString()} (${deliveryMethod === 'delivery' ? `Delivery to: ${deliveryAddress}` : 'Self Pickup'}). Complete payment via M-Pesa to dispatch your delivery.`
+        `Hello ${customerName}, your gas order #${orderNumber} has been received by ${stationName}. Total: Ksh ${totalAmount.toLocaleString()} (${deliveryMethod === 'delivery' ? `Delivery to: ${deliveryAddress}` : 'Self Pickup'}). ${paymentNotice}`
       );
     }
 
@@ -1183,7 +1188,7 @@ apiRouter.post('/orders', async (req: Request, res: Response) => {
         stationName,
         `[New Order] Order #${orderNumber} received for ${stationName}`,
         'provider_new_order',
-        `Hello ${stationName}, a new customer order #${orderNumber} has been received from ${customerName} (${customerPhone}). Items: ${computedItems.map((ci) => `${ci.quantity}x ${ci.productName}`).join(', ')}. Delivery: ${deliveryMethod} (${deliveryAddress || 'Store Pickup'}). Total: Ksh ${totalAmount.toLocaleString()}. Please prepare for dispatch upon payment confirmation.`
+        `Hello ${stationName}, a new customer order #${orderNumber} has been received from ${customerName} (${customerPhone}). Items: ${computedItems.map((ci) => `${ci.quantity}x ${ci.productName}`).join(', ')}. Delivery: ${deliveryMethod} (${deliveryAddress || 'Store Pickup'}). Total: Ksh ${totalAmount.toLocaleString()}. Payment: ${deliveryMethod === 'pickup' ? 'Customer will pay at station at pickup.' : 'Customer will make payment on delivery.'} Please prepare the order for dispatch.`
       );
     }
 

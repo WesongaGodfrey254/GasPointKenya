@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   CreditCard,
   Send,
+  Wallet,
 } from 'lucide-react';
 
 export const OwnerDashboard: React.FC = () => {
@@ -131,6 +132,22 @@ export const OwnerDashboard: React.FC = () => {
 
       if (res.ok) {
         setSelectedOrderForDispatch(null);
+        fetchStationData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Mark payment as collected (on delivery or at station pickup)
+  const handleMarkPaymentCollected = async (orderId: number) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentStatus: 'completed' }),
+      });
+      if (res.ok) {
         fetchStationData();
       }
     } catch (e) {
@@ -511,7 +528,7 @@ export const OwnerDashboard: React.FC = () => {
             <div className="flex flex-wrap gap-1.5">
               {[
                 { id: 'all', label: 'All Orders' },
-                { id: 'pending', label: 'New / Paid' },
+                { id: 'pending', label: 'New Orders' },
                 { id: 'preparing', label: 'Preparing / Tested' },
                 { id: 'in_transit', label: 'Out for Delivery' },
                 { id: 'delivered', label: 'Completed' },
@@ -589,6 +606,16 @@ export const OwnerDashboard: React.FC = () => {
                           {ord.deliveryMethod === 'delivery' ? ord.deliveryAddress : 'Customer Pickup'}
                         </strong>
                       </div>
+                      <div>
+                        Payment:{' '}
+                        <strong className={ord.paymentStatus === 'completed' ? 'text-emerald-700' : 'text-amber-700'}>
+                          {ord.paymentStatus === 'completed'
+                            ? 'Paid'
+                            : ord.deliveryMethod === 'pickup'
+                            ? 'Pay at station at pickup'
+                            : 'Pay on delivery'}
+                        </strong>
+                      </div>
                       {ord.notes && (
                         <div className="p-2 bg-slate-50 rounded-lg text-slate-600">
                           Notes: {ord.notes}
@@ -605,7 +632,18 @@ export const OwnerDashboard: React.FC = () => {
                   </div>
 
                   {/* Actions according to status */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                    {ord.paymentStatus !== 'completed' &&
+                    ['out_for_delivery', 'delivered'].includes(ord.orderStatus) ? (
+                      <button
+                        onClick={() => handleMarkPaymentCollected(ord.id)}
+                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1"
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                        <span>Mark Payment Collected</span>
+                      </button>
+                    ) : null}
+
                     {ord.orderStatus === 'pending' || ord.orderStatus === 'confirmed' ? (
                       <button
                         onClick={() => handleUpdateOrderStatus(ord.id, 'preparing')}
@@ -802,7 +840,7 @@ export const OwnerDashboard: React.FC = () => {
               <div className="text-2xl font-black text-emerald-800 mt-1">
                 KSh {analytics.totalRevenue.toLocaleString()}
               </div>
-              <div className="text-[11px] text-emerald-600 mt-1">From verified M-Pesa sales</div>
+              <div className="text-[11px] text-emerald-600 mt-1">From completed orders</div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
@@ -988,6 +1026,13 @@ export const OwnerDashboard: React.FC = () => {
                   onChange={(e) => setNewProduct({ ...newProduct, brand: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
                 >
+                  <option value="Taifa Gas">Taifa Gas</option>
+                  <option value="Lake Gas">Lake Gas</option>
+                  <option value="Galana Gas">Galana Gas</option>
+                  <option value="Supa Gas">Supa Gas</option>
+                  <option value="Mpishi Gas">Mpishi Gas</option>
+                  <option value="Sea gas">Sea gas</option>
+                  <option value="M Gas">M Gas</option>
                   <option value="TotalEnergies">TotalEnergies</option>
                   <option value="Rubis K-Gas">Rubis K-Gas</option>
                   <option value="Afrigas">Afrigas</option>
